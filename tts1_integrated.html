@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+
+<html lang="cn">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.16.9/xlsx.full.min.js"></script>
+<title>听写</title>
+
+<style>.body {
+    background-color: white;
+    color: black;
+    font-family: 'Helvetica, Arial, sans-serif';
+}
+
+.app-container {
+    width: 500px;
+    margin: 0 auto;
+    padding: 20px;
+    background-color: white;
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+}
+
+.label {
+    font-size: 14px;
+    margin: 10px 0;
+}
+
+.button {
+    font-size: 14px;
+    background-color: green;
+    color: white;
+    border: none;
+    padding: 10px;
+    margin: 10px 0;
+    cursor: pointer;
+}
+
+.button:disabled {
+    background-color: gray;
+}
+
+.input {
+    width: 100%;
+    padding: 10px;
+    font-size: 14px;
+    margin: 10px 0;
+    box-sizing: border-box;
+}
+
+.table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 10px 0;
+}
+
+.table th, .table td {
+    border: 1px solid #ccc;
+    padding: 8px;
+    text-align: left;
+}
+
+</style></head>
+<body>
+<div class="app-container">
+<h1>听写</h1>
+<input id="upload" type="file"/>
+<div class="label" id="wordCountLabel">将要听写的单词数量: 0</div>
+<button class="button" id="startButton" onclick="startSpellingTest()">开始听写</button>
+<button class="button" id="stopButton" onclick="stopSpellingTest()">中断听写</button>
+<input class="input" id="wordInput" onkeydown="checkWord(event)" placeholder="在此输入单词" type="text"/>
+<table class="table" id="resultTable">
+<thead>
+<tr>
+<th>正确拼写</th>
+<th>用户输入</th>
+<th>中文</th>
+</tr>
+</thead>
+<tbody>
+<!-- 行将在这里动态插入 -->
+</tbody>
+</table>
+<div id="statusMessage"></div>
+<div class="label" id="accuracyLabel"></div>
+</div>
+
+<script>let wordList = [];
+let wordList_En = [];
+let current_index = 0;
+let correctCount = 0;
+let attemptCount = 0;
+let running = false;
+let startTime;
+
+const synth = window.speechSynthesis;
+const msg = new SpeechSynthesisUtterance();
+let voices = [];
+const voicesDropdown = document.querySelector('[name="voice"]');
+const options = document.querySelectorAll('[type="range"], [name="text"]');
+const speakButton = document.querySelector('#speak');
+const stopButton = document.querySelector('#stop');
+
+document.getElementById('upload').addEventListener('change', handleFile, false);
+
+async function startSpellingTest() {
+    // 初始化变量
+    current_index = 0;
+    correctCount = 0;
+    attemptCount = 0;
+    running = true;
+
+    document.getElementById('wordCountLabel').textContent = `将要听写的单词数量: ${wordList.length}`;
+    document.getElementById('accuracyLabel').textContent = '';
+    document.getElementById('wordInput').value = '';
+    document.getElementById('resultTable').querySelector('tbody').innerHTML = '';
+
+    startTime = new Date().getTime();
+
+    sayWord(wordList_En[current_index]);
+}
+
+function handleFile(e) {
+    var files = e.target.files, f = files[0];
+    var reader = new FileReader();
+    reader.onload = function(e) {
+        var data = new Uint8Array(e.target.result);
+        var workbook = XLSX.read(data, {type: 'array'});
+        
+        // 获取第一个工作表的名称
+        var firstSheetName = workbook.SheetNames[0];
+        
+        // 获取第一个工作表的数据
+        var worksheet = workbook.Sheets[firstSheetName];
+        //worksheet[0] = ""
+        //console.log(worksheet);
+        
+        wordList = XLSX.utils.sheet_to_json(worksheet, {header:1}).slice(1);
+        // 将数据转换为JSON对象数组
+        // wordList 包含中英文数据
+
+        wordList_En = wordList.map(item => item[0]);
+        // 用wordList_En专门存储英文单词
+            
+        //console.log(wordList);
+        console.log(typeof wordList);
+    };
+    reader.readAsArrayBuffer(f);
+}
+
+function sayWord(wordArray) {
+    let word = wordArray; // 获取英文单词，它是数组的第一个元素
+    console.log(typeof wordArray);
+    let repeat_count = 0;
+
+    let msg = new SpeechSynthesisUtterance();
+    msg.text = word;  // 将word数组指定为tts输入
+    msg.lang = 'en-GB';  // 指定为英文(英国)
+    msg.rate = 0.9;
+
+    msg.onend = function(event) {
+        if(repeat_count < 1) {
+            repeat_count += 1;
+            setTimeout(function() {
+                window.speechSynthesis.speak(msg); // 每个单词重复2次，间隔200ms
+            }, 200);
+        }
+    };
+
+    window.speechSynthesis.cancel();
+    
+    // 延迟200ms播放
+    setTimeout(function() {
+        window.speechSynthesis.speak(msg);  // Speak the utterance
+    }, 200);
+}
+
+
+
+function checkWord(event) {
+    if (event.key === 'Enter') {
+        if (!running) return;
+
+        let userInput = event.target.value.toLowerCase();
+        
+        if (userInput === '') {
+            alert('请输入单词');
+            return;
+        }
+
+        attemptCount++;
+        let correctWord = wordList[current_index][0].toLowerCase(); // 使用索引0来访问英文单词
+
+        if (userInput === correctWord) {
+            correctCount++;
+        } else {
+            let tableBody = document.getElementById('resultTable').querySelector('tbody');
+            let newRow = tableBody.insertRow();
+            newRow.insertCell(0).textContent = correctWord;
+            newRow.insertCell(1).textContent = userInput;
+            newRow.insertCell(2).textContent = wordList[current_index][1]; // 使用索引1来访问中文描述
+        }
+
+        current_index++;
+        event.target.value = '';
+
+        if (current_index < wordList.length) {
+            sayWord(wordList[current_index]);
+        } else {
+            showResults();
+        }
+    }
+}
+
+
+function stopSpellingTest() {
+    if (running) {
+        running = false;
+        showResults();
+    }
+}
+
+function showResults() {
+    let statusMessageElement = document.getElementById('statusMessage');
+    
+    if (current_index < wordList.length || hasInterrupted) {
+        statusMessageElement.textContent = '您未完成全部听写';
+    } else {
+        statusMessageElement.textContent = '听写完成！'; // 其他适当的消息表示听写已完成
+    }
+    running = false;
+    let endTime = new Date().getTime();
+    let accuracy = (correctCount / attemptCount) * 100;
+    let elapsedTime = (endTime - startTime) / 1000;
+
+    document.getElementById('accuracyLabel').textContent = `正确率: ${accuracy.toFixed(2)}%, 总听写单词数: ${attemptCount}/${wordList.length}, 错误的单词数: ${attemptCount - correctCount}, 听写用时: ${elapsedTime.toFixed(2)}秒`;
+}</script></body>
+</html>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.17.0/xlsx.full.min.js"></script>
